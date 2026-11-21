@@ -30,14 +30,15 @@
     screen, and it is up to the app to keep its own content out of the way,
     which is what `SafeArea` is for.
   -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#140F3F">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aexyron Notes">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
@@ -45,7 +46,10 @@
   <title>Aexyron Notes</title>
   <link rel="manifest" href="manifest.json">
   <style>
-    html, body { margin: 0; height: 100%; background: #140F3F; }
+    html, body { margin: 0; height: 100%; background: #140F3F; overflow: hidden;
+      /* No pull-to-refresh, bounce, text-selection or long-press pop-ups while writing. */
+      overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none;
+      -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
     /* Branded splash shown while the engine loads; removed on Flutter's first frame. */
     #splash { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
       background: radial-gradient(120% 90% at 25% 15%, #3B20C0 0%, #140F3F 60%); transition: opacity .45s ease; z-index: 10; }
@@ -71,6 +75,45 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    // Install as an app anywhere: Chrome/Edge (Android, Windows, Mac, Linux) offer a
+    // prompt we keep for the in-app Install button; iPhone/iPad use Add to Home Screen.
+    window.__aexInstall = null;
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__aexInstall = e; });
+    window.addEventListener('appinstalled', function () { window.__aexInstall = null; window.__aexInstalled = true; });
+    window.aexyronInstallState = function () {
+      var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (standalone || window.__aexInstalled) return 'installed';
+      if (window.__aexInstall) return 'prompt';
+      var ua = navigator.userAgent;
+      var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      return ios ? 'ios' : 'manual';
+    };
+    window.aexyronInstall = function () {
+      var e = window.__aexInstall;
+      if (!e) return Promise.resolve('unavailable');
+      e.prompt();
+      return e.userChoice.then(function (c) { window.__aexInstall = null; return c.outcome; });
+    };
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+          // Look for a newer version whenever the app comes back to the front.
+          document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update().catch(function () {}); });
+        }).catch(function () {});
+      });
+      // A newer version just took over: if you haven't started writing yet, switch to it
+      // at once; otherwise wait until the app is in the background, so nothing is interrupted.
+      var touched = false;
+      ['pointerdown', 'keydown'].forEach(function (ev) { window.addEventListener(ev, function () { touched = true; }, { once: true, capture: true }); });
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController) { hadController = true; return; } // first install, nothing to update
+        if (!touched) { location.reload(); return; }
+        document.addEventListener('visibilitychange', function () { if (document.hidden) location.reload(); }, { once: true });
+      });
+    }
+  </script>
   <script src="aexyron_scan.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
