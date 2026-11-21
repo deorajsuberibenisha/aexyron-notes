@@ -4,8 +4,8 @@
 // * App code and the drawing engine have a new address for every release, so
 //   they are served straight from the device; a new release is fetched once.
 // * Fonts, icons and other files open from the device and refresh quietly.
-const VERSION = '20261121-225857';
-const CANVASKIT = 'canvaskit-20261121-225857/';
+const VERSION = '20261121-230328';
+const CANVASKIT = 'canvaskit-20261121-230328/';
 const CACHE = 'aexyron-app';
 const CORE = ['index.html', 'manifest.json', 'favicon.png', 'icons/Icon-192.png', 'icons/Icon-512.png'];
 

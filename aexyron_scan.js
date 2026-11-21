@@ -16,11 +16,20 @@
     });
   }
 
-  async function worker() {
+  var workerLang = null;
+  async function worker(lang) {
+    lang = lang || 'eng';
+    if (workerPromise && workerLang !== lang) {
+      // A different language: start a fresh reader for it.
+      const old = workerPromise;
+      workerPromise = null;
+      old.then(function (w) { w.terminate(); }, function () {});
+    }
     if (!workerPromise) {
+      workerLang = lang;
       workerPromise = (async () => {
         await loadScript(TESSERACT_URL);
-        return window.Tesseract.createWorker('eng');
+        return window.Tesseract.createWorker(lang);
       })();
       workerPromise.catch(() => { workerPromise = null; });
     }
@@ -102,8 +111,8 @@
     return { jpeg: new Uint8Array(await out.arrayBuffer()), width: cw, height: ch };
   }
 
-  async function recognize(jpegBytes) {
-    const w = await worker();
+  async function recognize(jpegBytes, lang) {
+    const w = await worker(lang);
     const url = URL.createObjectURL(new Blob([jpegBytes], { type: 'image/jpeg' }));
     try {
       const { data } = await w.recognize(url, {}, { blocks: true });
