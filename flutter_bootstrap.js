@@ -43,8 +43,8 @@ _flutter.buildConfig = {"engineRevision":"4d35714800b9266b6693a58e1225ecd7e9e45e
 
 // Stamped by tools/deploy-pages.ps1. Each release gets its own addresses, so the
 // app can always open straight from the device and still pick up new versions.
-const AEX_VERSION = '20261121-183002';
-const AEX_CANVASKIT = 'canvaskit-20261121-183002/';
+const AEX_VERSION = '20261121-183953';
+const AEX_CANVASKIT = 'canvaskit-20261121-183953/';
 if (!AEX_VERSION.startsWith('__')) {
   for (const b of _flutter.buildConfig.builds) {
     if (b.mainJsPath) b.mainJsPath += '?v=' + AEX_VERSION;
