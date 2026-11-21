@@ -282,6 +282,59 @@
       window.aexyronStopPlay = function () { if (audio) audio.pause(); };
     })();
 
+    // PDF form fields, read with pdf.js (loaded only when a form is filled in).
+    (function () {
+      var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+      var ready = null;
+      function load() {
+        if (!ready) {
+          ready = new Promise(function (resolve, reject) {
+            var s = document.createElement('script');
+            s.src = PDFJS + 'pdf.min.js';
+            s.onload = function () {
+              window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
+              resolve(window.pdfjsLib);
+            };
+            s.onerror = function () { ready = null; reject(new Error('pdf.js did not load')); };
+            document.head.appendChild(s);
+          });
+        }
+        return ready;
+      }
+      window.aexyronFormFields = async function (bytes) {
+        var lib = await load();
+        var doc = await lib.getDocument({ data: bytes.slice() }).promise;
+        var out = [];
+        for (var p = 1; p <= doc.numPages; p++) {
+          var page = await doc.getPage(p);
+          var v = page.view; // [x0, y0, x1, y1]
+          var pw = v[2] - v[0], ph = v[3] - v[1];
+          var anns = await page.getAnnotations();
+          for (var i = 0; i < anns.length; i++) {
+            var a = anns[i];
+            if (a.subtype !== 'Widget' || !a.rect || a.hidden) continue;
+            var kind = a.fieldType === 'Tx' ? 'text' : a.fieldType === 'Ch' ? 'choice'
+              : a.fieldType === 'Btn' ? (a.checkBox ? 'check' : a.radioButton ? 'radio' : null) : null;
+            if (!kind) continue;
+            var name = a.fieldName || ('Field ' + (out.length + 1));
+            var short = name.replace(/\[\d+\]/g, '').split('.').pop();
+            var label = (a.alternativeText || short || name).trim();
+            var value = a.fieldValue == null ? '' : String(a.fieldValue);
+            if (kind === 'radio') label = label + ' â€“ ' + (a.buttonValue || '');
+            out.push({
+              page: p, kind: kind, name: kind === 'radio' ? name + '#' + (a.buttonValue || i) : name, label: label,
+              l: (a.rect[0] - v[0]) / pw, r: (a.rect[2] - v[0]) / pw,
+              t: (v[3] - a.rect[3]) / ph, b: (v[3] - a.rect[1]) / ph,
+              value: value === 'Off' ? '' : value, multi: !!a.multiLine,
+              options: (a.options || []).map(function (o) { return o.displayValue || o.exportValue; })
+            });
+          }
+        }
+        doc.destroy();
+        return JSON.stringify(out);
+      };
+    })();
+
     // Full screen for presenting.
     window.aexyronFullscreen = function (on) {
       try {
@@ -311,6 +364,6 @@
     };
   </script>
   <script src="aexyron_scan.js" defer></script>
-  <script src="flutter_bootstrap.js?v=20261121-235115" async></script>
+  <script src="flutter_bootstrap.js?v=20261121-235844" async></script>
 </body>
 </html>
