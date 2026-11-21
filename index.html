@@ -213,6 +213,28 @@
       };
     })();
 
+    // Take a photo: phones and tablets open the camera; computers pick a picture.
+    window.aexyronTakePhoto = function () {
+      return new Promise(function (resolve) {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.setAttribute('capture', 'environment');
+        input.style.display = 'none';
+        var done = false;
+        input.addEventListener('change', function () {
+          done = true;
+          var f = input.files && input.files[0];
+          input.remove();
+          if (!f) { resolve(null); return; }
+          f.arrayBuffer().then(function (b) { resolve(new Uint8Array(b)); }, function () { resolve(null); });
+        });
+        input.addEventListener('cancel', function () { if (!done) { input.remove(); resolve(null); } });
+        document.body.appendChild(input);
+        input.click();
+      });
+    };
+
     // Full screen for presenting.
     window.aexyronFullscreen = function (on) {
       try {
@@ -242,6 +264,6 @@
     };
   </script>
   <script src="aexyron_scan.js" defer></script>
-  <script src="flutter_bootstrap.js?v=20261121-185854" async></script>
+  <script src="flutter_bootstrap.js?v=20261121-222929" async></script>
 </body>
 </html>
