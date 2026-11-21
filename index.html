@@ -235,6 +235,53 @@
       });
     };
 
+    // Audio recorded while writing, and playing it back from any moment.
+    (function () {
+      var rec = null, chunks = [], stream = null, mime = '';
+      window.aexyronRecStart = function () {
+        if (!navigator.mediaDevices || !window.MediaRecorder) return Promise.resolve(false);
+        return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+          stream = s; chunks = [];
+          var types = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'];
+          mime = '';
+          for (var i = 0; i < types.length; i++) {
+            if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(types[i])) { mime = types[i]; break; }
+          }
+          rec = new MediaRecorder(s, mime ? { mimeType: mime } : undefined);
+          mime = rec.mimeType || mime || 'audio/webm';
+          rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+          rec.start(1000);
+          return true;
+        }, function () { return false; });
+      };
+      window.aexyronRecStop = function () {
+        return new Promise(function (resolve) {
+          if (!rec) { resolve(null); return; }
+          rec.onstop = function () {
+            var b = new Blob(chunks, { type: mime });
+            if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+            rec = null;
+            b.arrayBuffer().then(function (a) { resolve(new Uint8Array(a)); }, function () { resolve(null); });
+          };
+          rec.stop();
+        });
+      };
+      window.aexyronRecMime = function () { return mime || 'audio/webm'; };
+      var audio = null, url = null;
+      window.aexyronPlay = function (bytes, type, at) {
+        try {
+          if (audio) audio.pause();
+          if (url) URL.revokeObjectURL(url);
+          url = URL.createObjectURL(new Blob([bytes], { type: type }));
+          audio = new Audio(url);
+          audio.addEventListener('loadedmetadata', function () { try { audio.currentTime = Math.max(0, at); } catch (e) {} }, { once: true });
+          audio.play();
+          return true;
+        } catch (e) { return false; }
+      };
+      window.aexyronStopPlay = function () { if (audio) audio.pause(); };
+    })();
+
     // Full screen for presenting.
     window.aexyronFullscreen = function (on) {
       try {
@@ -264,6 +311,6 @@
     };
   </script>
   <script src="aexyron_scan.js" defer></script>
-  <script src="flutter_bootstrap.js?v=20261121-224446" async></script>
+  <script src="flutter_bootstrap.js?v=20261121-225142" async></script>
 </body>
 </html>
