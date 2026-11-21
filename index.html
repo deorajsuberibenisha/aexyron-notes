@@ -134,8 +134,114 @@
         document.addEventListener('visibilitychange', function () { if (document.hidden) location.reload(); }, { once: true });
       });
     }
+
+    // Drop PDFs and pictures onto the window to import them. Files dropped
+    // before the app is ready wait in a queue.
+    (function () {
+      var handler = null, queue = [], shade = null, depth = 0;
+      function show(on) {
+        if (!shade) {
+          shade = document.createElement('div');
+          shade.style.cssText = 'position:fixed;inset:12px;z-index:20;border:3px dashed #8E7CFF;border-radius:28px;' +
+            'background:rgba(59,32,192,.12);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;' +
+            'font:800 20px Roboto,system-ui,sans-serif;color:#3B20C0;pointer-events:none;transition:opacity .15s';
+          shade.textContent = 'Drop PDFs or pictures to add them';
+          document.body.appendChild(shade);
+        }
+        shade.style.opacity = on ? '1' : '0';
+      }
+      function deliver(name, bytes) { if (handler) handler(name, bytes); else queue.push([name, bytes]); }
+      window.aexyronOnDrop = function (fn) {
+        handler = fn;
+        var q = queue; queue = [];
+        q.forEach(function (f) { fn(f[0], f[1]); });
+      };
+      var hasFiles = function (e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; };
+      window.addEventListener('dragenter', function (e) { if (!hasFiles(e)) return; e.preventDefault(); depth++; show(true); });
+      window.addEventListener('dragover', function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+      window.addEventListener('dragleave', function (e) { if (!hasFiles(e)) return; depth = Math.max(0, depth - 1); if (!depth) show(false); });
+      window.addEventListener('drop', function (e) {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); depth = 0; show(false);
+        Array.prototype.forEach.call(e.dataTransfer.files, function (f) {
+          if (!/\.(pdf|png|jpe?g|webp|gif|heic)$/i.test(f.name) && !/^(application\/pdf|image\/)/.test(f.type)) return;
+          f.arrayBuffer().then(function (buf) { deliver(f.name, new Uint8Array(buf)); });
+        });
+      });
+    })();
+
+    // Unlock with the device's fingerprint, face or Windows Hello (a local passkey).
+    // Nothing is sent anywhere: the device checks it's you and says yes or no.
+    (function () {
+      function b64(buf) { var s = '', a = new Uint8Array(buf); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+        return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+      function unb64(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+        var r = atob(s), a = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) a[i] = r.charCodeAt(i); return a; }
+      function rnd(n) { var a = new Uint8Array(n); crypto.getRandomValues(a); return a; }
+      window.aexyronBioAvailable = function () {
+        try {
+          if (!window.isSecureContext || !window.PublicKeyCredential ||
+              !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return Promise.resolve(false);
+          return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(function () { return false; });
+        } catch (e) { return Promise.resolve(false); }
+      };
+      window.aexyronBioEnrol = function () {
+        try {
+          return navigator.credentials.create({ publicKey: {
+            rp: { name: 'Aexyron Notes' },
+            user: { id: rnd(16), name: 'Aexyron Notes', displayName: 'Aexyron Notes app lock' },
+            challenge: rnd(32),
+            pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+            timeout: 60000, attestation: 'none'
+          } }).then(function (c) { return c ? b64(c.rawId) : ''; }, function () { return ''; });
+        } catch (e) { return Promise.resolve(''); }
+      };
+      window.aexyronBioVerify = function (id) {
+        try {
+          return navigator.credentials.get({ publicKey: {
+            challenge: rnd(32),
+            allowCredentials: [{ type: 'public-key', id: unb64(id), transports: ['internal', 'hybrid'] }],
+            userVerification: 'required', timeout: 60000
+          } }).then(function (a) {
+            if (!a || b64(a.rawId) !== id) return 'fail';
+            // Byte 32 of the authenticator data: bit 2 says the person was verified.
+            var flags = new Uint8Array(a.response.authenticatorData)[32];
+            return (flags & 4) ? 'ok' : 'fail';
+          }, function (e) { return e && e.name === 'NotAllowedError' ? 'cancel' : 'fail'; });
+        } catch (e) { return Promise.resolve('fail'); }
+      };
+    })();
+
+    // Full screen for presenting.
+    window.aexyronFullscreen = function (on) {
+      try {
+        if (on && !document.fullscreenElement) document.documentElement.requestFullscreen();
+        if (!on && document.fullscreenElement) document.exitFullscreen();
+      } catch (e) {}
+    };
+
+    // Print a PDF through a hidden frame (the browser's own print dialog).
+    window.aexyronPrintPdf = function (bytes) {
+      return new Promise(function (resolve) {
+        try {
+          var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+          var frame = document.createElement('iframe');
+          frame.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;border:0;bottom:0;right:0';
+          frame.src = url;
+          frame.onload = function () {
+            setTimeout(function () {
+              try { frame.contentWindow.focus(); frame.contentWindow.print(); resolve(true); }
+              catch (err) { window.open(url, '_blank'); resolve(true); }
+              setTimeout(function () { frame.remove(); URL.revokeObjectURL(url); }, 60000);
+            }, 250);
+          };
+          document.body.appendChild(frame);
+        } catch (err) { resolve(false); }
+      });
+    };
   </script>
   <script src="aexyron_scan.js" defer></script>
-  <script src="flutter_bootstrap.js?v=20261121-161233" async></script>
+  <script src="flutter_bootstrap.js?v=20261121-183002" async></script>
 </body>
 </html>
