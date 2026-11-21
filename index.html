@@ -98,6 +98,13 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+          // A newer version already downloaded and waiting: let it take over now.
+          var nudge = function () { if (reg.waiting) reg.waiting.postMessage('skipWaiting'); };
+          nudge();
+          reg.addEventListener('updatefound', function () {
+            var w = reg.installing;
+            if (w) w.addEventListener('statechange', function () { if (w.state === 'installed') nudge(); });
+          });
           // Look for a newer version whenever the app comes back to the front.
           document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update().catch(function () {}); });
         }).catch(function () {});

@@ -1,17 +1,14 @@
 ﻿// Aexyron Notes offline worker.
-// * Online: the app code comes fresh from the network every time it opens, so the
-//   newest version is what you see (the browser's own cache makes this quick).
+// * Online: every app file comes from the network (revalidated, so unchanged files
+//   are quick), which means opening the app always shows the newest version.
 // * Offline, or on a very slow connection: the saved copy opens instead.
-// Big engine files and assets answer from the cache instantly and refresh quietly.
-const VERSION = '20261121-115818';
+const VERSION = '20261121-120845';
 const CACHE = 'aexyron-' + VERSION;
 const CORE = [
   './', 'index.html', 'main.dart.js', 'flutter.js', 'flutter_bootstrap.js', 'manifest.json',
   'aexyron_scan.js', 'favicon.png', 'icons/Icon-192.png', 'icons/Icon-512.png',
   'assets/FontManifest.json', 'assets/AssetManifest.bin.json', 'assets/fonts/MaterialIcons-Regular.otf',
 ];
-// The app's own code: always try the network first.
-const FRESH = /(\/|index\.html|main\.dart\.js|flutter_bootstrap\.js|flutter\.js|manifest\.json|aexyron_scan\.js|version\.json)$/;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -31,7 +28,8 @@ self.addEventListener('activate', (event) => {
 
 function networkFirst(req, key) {
   return caches.open(CACHE).then((cache) => {
-    const net = fetch(req, { cache: 'no-cache' }).then((res) => {
+    // Navigations can't take extra options; everything else revalidates with the server.
+    const net = (req.mode === 'navigate' ? fetch(req) : fetch(req, { cache: 'no-cache' })).then((res) => {
       if (res && res.ok) cache.put(key || req, res.clone());
       return res;
     });
@@ -67,9 +65,16 @@ self.addEventListener('fetch', (event) => {
   if (!sameOrigin && !cdn) return;
   if (req.mode === 'navigate') {
     event.respondWith(networkFirst(req, 'index.html'));
-  } else if (sameOrigin && FRESH.test(url.pathname)) {
+  } else if (sameOrigin) {
+    // Every app file checks with the server first (unchanged files cost only a quick
+    // "still the same?" check), so opening the app always gives the newest version.
     event.respondWith(networkFirst(req));
   } else {
     event.respondWith(cacheFirst(req));
   }
+});
+
+// A page can ask a waiting new version to take over straight away.
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') self.skipWaiting();
 });
