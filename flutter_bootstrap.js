@@ -41,8 +41,23 @@ if (!window._flutter) {
 _flutter.buildConfig = {"engineRevision":"4d35714800b9266b6693a58e1225ecd7e9e45ed7","wasmHashes":{"canvaskit.wasm":"f3c2ff164f324217ebe1d84900110e425c0195fc63f34e8b58de842a047e0c1c","chromium/canvaskit.wasm":"e269e717aad848981ed07db8573b4f7923ccd557d2e696f2944f541f4ff3df9f","skwasm.wasm":"eee8d9962314004a929380cfcc44ccdec7319710647529265fb9abd3a05cc2a7","skwasm_heavy.wasm":"7f038b46cf04e0237a80a506cfab62af7195d487a4a00949c99274737a88373b","webparagraph/canvaskit.wasm":"01f0337c620a2afe20b92578ab5ec8db8e5bb6eccdef751d30bac9d1d683988e","wimp.wasm":"01d9aac38a88f55db167d4318932f568a421a1a402b13585789bedecf5f731fd"},"builds":[{"compileTarget":"dart2js","renderer":"canvaskit","mainJsPath":"main.dart.js"}]};
 
 
+// Stamped by tools/deploy-pages.ps1. Each release gets its own addresses, so the
+// app can always open straight from the device and still pick up new versions.
+const AEX_VERSION = '20261121-161233';
+const AEX_CANVASKIT = 'canvaskit-20261121-161233/';
+if (!AEX_VERSION.startsWith('__')) {
+  for (const b of _flutter.buildConfig.builds) {
+    if (b.mainJsPath) b.mainJsPath += '?v=' + AEX_VERSION;
+  }
+}
+
 // Aexyron keeps its own offline service worker (sw.js), so Flutter's is not used.
 _flutter.loader.load({
+  config: {
+    // The drawing engine comes from the app's own files (cached on the device),
+    // not from a Google server on every launch.
+    canvasKitBaseUrl: AEX_CANVASKIT.startsWith('__') ? 'canvaskit/' : AEX_CANVASKIT,
+  },
   onEntrypointLoaded: async function (engineInitializer) {
     const appRunner = await engineInitializer.initializeEngine();
     await appRunner.runApp();

@@ -1,58 +1,85 @@
-﻿// Aexyron Notes offline worker.
-// * Online: every app file comes from the network (revalidated, so unchanged files
-//   are quick), which means opening the app always shows the newest version.
-// * Offline, or on a very slow connection: the saved copy opens instead.
-const VERSION = '20261121-120845';
-const CACHE = 'aexyron-' + VERSION;
-const CORE = [
-  './', 'index.html', 'main.dart.js', 'flutter.js', 'flutter_bootstrap.js', 'manifest.json',
-  'aexyron_scan.js', 'favicon.png', 'icons/Icon-192.png', 'icons/Icon-512.png',
-  'assets/FontManifest.json', 'assets/AssetManifest.bin.json', 'assets/fonts/MaterialIcons-Regular.otf',
-];
+// Aexyron Notes offline worker: opens instantly, works offline, stays up to date.
+// * The page (index.html) is checked online first, but never waits more than
+//   1.5 s: after that the saved copy opens at once.
+// * App code and the drawing engine have a new address for every release, so
+//   they are served straight from the device; a new release is fetched once.
+// * Fonts, icons and other files open from the device and refresh quietly.
+const VERSION = '20261121-161233';
+const CANVASKIT = 'canvaskit-20261121-161233/';
+const CACHE = 'aexyron-app';
+const CORE = ['index.html', 'manifest.json', 'favicon.png', 'icons/Icon-192.png', 'icons/Icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE)
-      .then((cache) => Promise.all(CORE.map((u) => cache.add(new Request(u, { cache: 'reload' })).catch(() => null))))
+      .then((cache) =>
+        Promise.all(
+          CORE.map((u) =>
+            fetch(u, { cache: 'reload' }).then((r) => r.ok && cache.put(u, r)).catch(() => null),
+          ),
+        ),
+      )
       .then(() => self.skipWaiting()),
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('aexyron-') && k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+    (async () => {
+      // Remove caches from older designs, and files from older releases.
+      for (const k of await caches.keys()) if (k.startsWith('aexyron-') && k !== CACHE) await caches.delete(k);
+      if (!VERSION.startsWith('__')) {
+        const cache = await caches.open(CACHE);
+        for (const req of await cache.keys()) {
+          const u = new URL(req.url);
+          const stampedNow = u.searchParams.get('v') === VERSION || (!CANVASKIT.startsWith('__') && u.pathname.includes('/' + CANVASKIT));
+          const core = CORE.some((c) => u.pathname.endsWith('/' + c));
+          // A new release: everything else (assets, fonts, old code) is fetched fresh once.
+          if (!stampedNow && !core) await cache.delete(req);
+        }
+      }
+      await self.clients.claim();
+    })(),
   );
 });
 
-function networkFirst(req, key) {
+// Some servers send the drawing engine (.wasm) with a generic type, which
+// browsers refuse to run quickly; give it the right one.
+async function fixType(req, res) {
+  if (!res || !res.ok || !new URL(req.url).pathname.endsWith('.wasm')) return res;
+  if ((res.headers.get('content-type') || '').includes('application/wasm')) return res;
+  const headers = new Headers(res.headers);
+  headers.set('content-type', 'application/wasm');
+  return new Response(await res.blob(), { status: res.status, statusText: res.statusText, headers });
+}
+
+function pageFirst(req) {
   return caches.open(CACHE).then((cache) => {
-    // Navigations can't take extra options; everything else revalidates with the server.
-    const net = (req.mode === 'navigate' ? fetch(req) : fetch(req, { cache: 'no-cache' })).then((res) => {
-      if (res && res.ok) cache.put(key || req, res.clone());
+    const net = fetch(req).then((res) => {
+      if (res && res.ok) cache.put('index.html', res.clone());
       return res;
     });
-    // If the network is slow (over 4 s) or down, open the saved copy.
-    const slow = new Promise((resolve) => setTimeout(resolve, 4000)).then(() => cache.match(key || req));
-    return Promise.race([net.catch(() => cache.match(key || req)), slow.then((hit) => hit || net)]).then(
-      (res) => res || net,
-    );
+    const quick = new Promise((resolve) => setTimeout(resolve, 1500)).then(() => cache.match('index.html'));
+    return Promise.race([net.catch(() => cache.match('index.html')), quick.then((hit) => hit || net)]).then((r) => r || net);
   });
 }
 
-function cacheFirst(req) {
-  return caches.open(CACHE).then((cache) =>
-    cache.match(req).then((hit) => {
-      const net = fetch(req)
-        .then((res) => {
-          if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
-          return res;
-        })
-        .catch(() => hit);
-      return hit || net;
-    }),
-  );
+async function deviceFirst(req, refresh) {
+  const cache = await caches.open(CACHE);
+  const hit = await cache.match(req);
+  const fetchAndKeep = () =>
+    fetch(req)
+      .then((res) => fixType(req, res))
+      .then((res) => {
+        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+        return res;
+      });
+  if (hit) {
+    // Release-stamped files never change; others refresh quietly for next time.
+    if (refresh) fetchAndKeep().catch(() => null);
+    return fixType(req, hit);
+  }
+  return fetchAndKeep();
 }
 
 self.addEventListener('fetch', (event) => {
@@ -64,17 +91,14 @@ self.addEventListener('fetch', (event) => {
   const cdn = url.hostname === 'cdn.jsdelivr.net' || url.hostname === 'tessdata.projectnaptha.com';
   if (!sameOrigin && !cdn) return;
   if (req.mode === 'navigate') {
-    event.respondWith(networkFirst(req, 'index.html'));
-  } else if (sameOrigin) {
-    // Every app file checks with the server first (unchanged files cost only a quick
-    // "still the same?" check), so opening the app always gives the newest version.
-    event.respondWith(networkFirst(req));
-  } else {
-    event.respondWith(cacheFirst(req));
+    event.respondWith(pageFirst(req));
+    return;
   }
+  // Release-stamped code and engine never change at their address: no refresh needed.
+  const stamped = url.searchParams.has('v') || /\/canvaskit-[^/]+\//.test(url.pathname);
+  event.respondWith(deviceFirst(req, !stamped));
 });
 
-// A page can ask a waiting new version to take over straight away.
 self.addEventListener('message', (event) => {
   if (event.data === 'skipWaiting') self.skipWaiting();
 });
