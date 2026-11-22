@@ -36,7 +36,7 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Aexyron Notes">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 
@@ -58,6 +58,16 @@
     @keyframes breathe { 50% { transform: scale(1.05); } }
     @keyframes load { 0% { transform: scaleX(.1); opacity: .4 } 50% { transform: scaleX(1); opacity: 1 } 100% { transform: scaleX(.1); opacity: .4 } }
   </style>
+  <script>
+    // The app sets this to its own background colour: status bar, page edges and
+    // the area behind the home bar all match it, so no dark band shows.
+    window.aexyronSetChrome = function (hex) {
+      var m = document.querySelector('meta[name=theme-color]');
+      if (m) m.setAttribute('content', hex);
+      document.documentElement.style.background = hex;
+      document.body.style.background = hex;
+    };
+  </script>
 </head>
 <body>
   <div id="splash"><img src="icons/Icon-512.png" alt="Aexyron Notes"><div></div></div>
@@ -364,6 +374,6 @@
     };
   </script>
   <script src="aexyron_scan.js" defer></script>
-  <script src="flutter_bootstrap.js?v=20261122-090331" async></script>
+  <script src="flutter_bootstrap.js?v=20261122-091445" async></script>
 </body>
 </html>
